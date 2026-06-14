@@ -1,184 +1,268 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nimbus Weather App - Premium Weather Dashboard</title>
-    <!-- Google Fonts: Poppins -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Font Awesome for sleek modern icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Stylesheet -->
-    <link rel="stylesheet" href="style.css">
+  <!-- Basic page setup -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nimbus - Weather App</title>
+
+  <!-- Google Font: Poppins (clean modern font) -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Font Awesome: for icons like wind, droplet, eye etc. -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+
+  <!-- Our custom stylesheet -->
+  <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
-    <!-- Background Animated Gradient & Effects Layers -->
-    <div class="bg-gradient" id="bg-gradient"></div>
-    <div class="sun-element" id="sun-element"></div>
-    <div class="cloud-container" id="cloud-container"></div>
-    <div class="fog-overlay" id="fog-overlay"></div>
-    <canvas class="weather-canvas" id="weather-canvas"></canvas>
 
-    <!-- Main Container -->
-    <main class="app-container">
-        <!-- App Title Header -->
-        <header class="app-header">
-            <h1 class="logo-text"><i class="fa-solid fa-cloud-bolt logo-icon"></i>Weather-App</h1>
-        </header>
+  <!-- ============================================================
+       BACKGROUND EFFECTS
+       These are invisible layers that show weather animations
+       ============================================================ -->
 
-        <!-- Weather Control/Search Panel -->
-        <section class="search-panel">
-            <div class="search-bar-wrapper">
-                <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                <input 
-                    type="text" 
-                    id="search-input" 
-                    placeholder="Search city, e.g., Tokyo, London..."
-                    aria-label="Search city"
-                    autocomplete="off"
-                >
-                <button id="search-btn" class="search-btn" aria-label="Search Button">
-                    Search
-                </button>
+  <!-- Rain / Snow canvas (drawn with JavaScript) -->
+  <canvas id="fx-canvas"></canvas>
+
+  <!-- Sun glow effect (shown for clear/sunny weather) -->
+  <div id="sun-el"></div>
+
+  <!-- Lightning bolts (shown for thunderstorm) -->
+  <div id="lightning-el">
+    <!-- Three separate lightning bolts at different positions -->
+    <div class="bolt-wrap bw1">
+      <svg class="bolt-svg" viewBox="0 0 70 400" preserveAspectRatio="none">
+        <polyline points="40,0 55,140 70,140 20,280 35,280 5,400"
+          fill="none" stroke="white" stroke-width="4" stroke-linejoin="round" />
+        <polyline points="40,0 55,140 70,140 20,280 35,280 5,400"
+          fill="none" stroke="#c8e6ff" stroke-width="10" stroke-linejoin="round" opacity="0.5" />
+      </svg>
+    </div>
+    <div class="bolt-wrap bw2">
+      <svg class="bolt-svg" viewBox="0 0 55 450" preserveAspectRatio="none">
+        <polyline points="35,0 50,160 55,160 15,320 30,320 0,450"
+          fill="none" stroke="white" stroke-width="3.5" stroke-linejoin="round" />
+        <polyline points="35,0 50,160 55,160 15,320 30,320 0,450"
+          fill="none" stroke="#b0d8ff" stroke-width="9" stroke-linejoin="round" opacity="0.45" />
+      </svg>
+    </div>
+    <div class="bolt-wrap bw3">
+      <svg class="bolt-svg" viewBox="0 0 60 360" preserveAspectRatio="none">
+        <polyline points="30,0 50,120 60,120 18,250 32,250 8,360"
+          fill="none" stroke="white" stroke-width="3" stroke-linejoin="round" />
+        <polyline points="30,0 50,120 60,120 18,250 32,250 8,360"
+          fill="none" stroke="#c0dcff" stroke-width="8" stroke-linejoin="round" opacity="0.4" />
+      </svg>
+    </div>
+    <!-- Full screen flash when lightning strikes -->
+    <div class="flash-screen"></div>
+  </div>
+
+  <!-- Moving clouds (shown for cloudy weather) -->
+  <div id="clouds-el">
+    <div class="bgc bgc1"></div>
+    <div class="bgc bgc2"></div>
+    <div class="bgc bgc3"></div>
+    <div class="bgc bgc4"></div>
+  </div>
+
+  <!-- Fog / Mist layers (shown for foggy weather) -->
+  <div id="fog-el">
+    <div class="fogl fl1"></div>
+    <div class="fogl fl2"></div>
+    <div class="fogl fl3"></div>
+  </div>
+
+  <!-- ============================================================
+       MAIN APP CONTENT
+       ============================================================ -->
+  <div class="app">
+
+    <!-- APP HEADER -->
+    <div class="header">
+      <div class="logo">
+        <i class="fas fa-cloud-sun"></i>
+        <span></span>
+      </div>
+      <p class="tagline">Weather Intelligence</p>
+    </div>
+
+    <!-- ── SEARCH SECTION ── -->
+    <div class="search-box">
+
+      <!-- Toggle buttons: Auto Detect vs Search City -->
+      <div class="toggle-tabs">
+        <button class="tab active" id="tab-auto" onclick="showTab('auto')">
+          <i class="fas fa-location-crosshairs"></i> Auto Detect
+        </button>
+        <button class="tab" id="tab-manual" onclick="showTab('manual')">
+          <i class="fas fa-search"></i> Search City
+        </button>
+      </div>
+
+      <!-- Auto detect panel -->
+      <div class="tab-panel" id="panel-auto">
+        <p class="hint">Click the button to use your current location</p>
+        <button class="detect-btn" id="detect-btn" onclick="detectLocation()">
+          <i class="fas fa-location-dot"></i> Detect My Location
+        </button>
+      </div>
+
+      <!-- Manual city search panel -->
+      <div class="tab-panel hidden" id="panel-manual">
+        <div class="search-input-row">
+          <input
+            type="text"
+            id="city-input"
+            placeholder="Enter city name (e.g. London)"
+            onkeydown="if(event.key==='Enter') searchCity()"
+          />
+          <button onclick="searchCity()">
+            <i class="fas fa-arrow-right"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Error message (hidden by default) -->
+      <p class="error-msg hidden" id="error-msg">
+        <i class="fas fa-circle-exclamation"></i>
+        <span id="error-text">Something went wrong.</span>
+      </p>
+
+    </div>
+
+    <!-- ── LOADING SPINNER (hidden until we fetch data) ── -->
+    <div class="loading hidden" id="loading">
+      <div class="spinner"></div>
+      <p>Fetching weather data...</p>
+    </div>
+
+    <!-- ── WEATHER RESULT SECTION (hidden until data loads) ── -->
+    <div class="weather-section hidden" id="weather-section">
+
+      <!-- CURRENT WEATHER CARD -->
+      <div class="card">
+
+        <!-- City name + date -->
+        <div class="card-top">
+          <div>
+            <h1 id="city-name">—</h1>
+            <p class="country" id="country-name">—</p>
+          </div>
+          <div class="date-box">
+            <p id="week-day">—</p>
+            <p id="full-date">—</p>
+          </div>
+        </div>
+
+        <!-- Temperature + weather icon -->
+        <div class="temp-row">
+          <div class="temperature">
+            <span id="temp-val">—</span>
+            <span class="unit">°C</span>
+          </div>
+          <div class="condition-box">
+            <i id="weather-icon" class="fas fa-cloud"></i>
+            <p id="condition-text">—</p>
+            <p class="feels" id="feels-like">Feels like —°</p>
+          </div>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Stats: humidity, wind, pressure, visibility -->
+        <div class="stats-grid">
+          <div class="stat">
+            <div class="stat-icon"><i class="fas fa-droplet"></i></div>
+            <div>
+              <p class="stat-label">Humidity</p>
+              <p class="stat-value" id="humidity">—</p>
             </div>
-            <button id="locate-btn" class="locate-btn" title="Detect Current Location" aria-label="Detect current location">
-                <i class="fa-solid fa-location-crosshairs"></i>
-            </button>
-        </section>
-
-        <!-- Message/Loading Display -->
-        <section id="status-message" class="status-message hidden">
-            <div class="spinner"></div>
-            <p id="status-text">Detecting your location...</p>
-        </section>
-
-        <!-- Main Glassmorphism Dashboard -->
-        <section id="weather-dashboard" class="weather-dashboard hidden">
-            <!-- Top Current Info Card -->
-            <div class="glass-card current-weather-card">
-                <div class="location-datetime">
-                    <h2 class="location-name">
-                        <span id="city-name">Bengaluru</span>, 
-                        <span id="country-code">IN</span>
-                    </h2>
-                    <p class="current-date" id="current-date">Saturday, 13 June</p>
-                </div>
-
-                <div class="weather-display-row">
-                    <div class="weather-main-icon" id="main-icon-container">
-                        <!-- Dynamic weather icon -->
-                        <i class="fa-solid fa-cloud-sun weather-icon" id="weather-icon"></i>
-                    </div>
-                    <div class="temp-condition-box">
-                        <div class="temp-container">
-                            <span class="temperature" id="current-temp">24</span><span class="temp-unit">°C</span>
-                        </div>
-                        <p class="weather-condition" id="weather-condition">Partly Cloudy</p>
-                        <p class="feels-like">Feels like: <span id="feels-like-temp">25</span>°C</p>
-                    </div>
-                </div>
+          </div>
+          <div class="stat">
+            <div class="stat-icon"><i class="fas fa-wind"></i></div>
+            <div>
+              <p class="stat-label">Wind</p>
+              <p class="stat-value" id="wind">—</p>
             </div>
-
-            <!-- Weather Details Grid -->
-            <div class="glass-card details-grid">
-                <!-- Humidity -->
-                <div class="detail-item">
-                    <div class="detail-icon">
-                        <i class="fa-solid fa-droplet"></i>
-                    </div>
-                    <div class="detail-info">
-                        <span class="detail-label">Humidity</span>
-                        <span class="detail-value" id="val-humidity">68%</span>
-                    </div>
-                </div>
-
-                <!-- Wind Speed -->
-                <div class="detail-item">
-                    <div class="detail-icon">
-                        <i class="fa-solid fa-wind"></i>
-                    </div>
-                    <div class="detail-info">
-                        <span class="detail-label">Wind Speed</span>
-                        <span class="detail-value" id="val-wind">12 km/h</span>
-                    </div>
-                </div>
-
-                <!-- Pressure -->
-                <div class="detail-item">
-                    <div class="detail-icon">
-                        <i class="fa-solid fa-gauge"></i>
-                    </div>
-                    <div class="detail-info">
-                        <span class="detail-label">Pressure</span>
-                        <span class="detail-value" id="val-pressure">1013 hPa</span>
-                    </div>
-                </div>
-
-                <!-- Visibility -->
-                <div class="detail-item">
-                    <div class="detail-icon">
-                        <i class="fa-solid fa-eye"></i>
-                    </div>
-                    <div class="detail-info">
-                        <span class="detail-label">Visibility</span>
-                        <span class="detail-value" id="val-visibility">10 km</span>
-                    </div>
-                </div>
-
-                <!-- Sunrise -->
-                <div class="detail-item">
-                    <div class="detail-icon">
-                        <i class="fa-solid fa-circle-arrow-up"></i>
-                    </div>
-                    <div class="detail-info">
-                        <span class="detail-label">Sunrise</span>
-                        <span class="detail-value" id="val-sunrise">05:45 AM</span>
-                    </div>
-                </div>
-
-                <!-- Sunset -->
-                <div class="detail-item">
-                    <div class="detail-icon">
-                        <i class="fa-solid fa-circle-arrow-down"></i>
-                    </div>
-                    <div class="detail-info">
-                        <span class="detail-label">Sunset</span>
-                        <span class="detail-value" id="val-sunset">06:50 PM</span>
-                    </div>
-                </div>
+          </div>
+          <div class="stat">
+            <div class="stat-icon"><i class="fas fa-gauge-high"></i></div>
+            <div>
+              <p class="stat-label">Pressure</p>
+              <p class="stat-value" id="pressure">—</p>
             </div>
-
-            <!-- 5-Day Forecast Header -->
-            <div class="forecast-section-title">
-                <h3>5-Day Forecast</h3>
+          </div>
+          <div class="stat">
+            <div class="stat-icon"><i class="fas fa-eye"></i></div>
+            <div>
+              <p class="stat-label">Visibility</p>
+              <p class="stat-value" id="visibility">—</p>
             </div>
+          </div>
+        </div>
 
-            <!-- 5-Day Forecast Cards Container -->
-            <div class="forecast-container" id="forecast-container">
-                <!-- Forecast cards are dynamically generated via JS -->
+        <hr class="divider" />
+
+        <!-- Sunrise and Sunset -->
+        <div class="sun-row">
+          <div class="sun-item">
+            <i class="fas fa-sun rise-icon"></i>
+            <div>
+              <p class="sun-label">Sunrise</p>
+              <p id="sunrise">—</p>
             </div>
-        </section>
+          </div>
 
-        <!-- API Key Alert Modal -->
-        <section id="api-modal" class="api-modal hidden">
-            <div class="glass-card modal-content">
-                <h2><i class="fa-solid fa-key"></i> OpenWeatherMap API Key Required</h2>
-                <p>To view live weather information, you must specify your OpenWeatherMap API key.</p>
-                <ol>
-                    <li>Sign up for a free key at <a href="https://openweathermap.org/" target="_blank" rel="noopener">openweathermap.org</a>.</li>
-                    <li>Open <code>script.js</code> in your editor.</li>
-                    <li>Replace the placeholder value <code>const API_KEY = "YOUR_API_KEY_HERE";</code> with your actual API key.</li>
-                </ol>
-                <div class="modal-buttons">
-                    <button id="modal-close-btn" class="modal-btn">Okay, I understand</button>
-                </div>
+          <!-- Arc progress bar showing where sun is in the sky -->
+          <div class="arc-wrap">
+            <svg width="100" height="52" viewBox="0 0 100 52" overflow="visible">
+              <!-- Grey track -->
+              <path d="M5,50 A45,45 0 0,1 95,50"
+                fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="2.5" stroke-linecap="round" />
+              <!-- Yellow filled progress -->
+              <path id="sun-arc" d="M5,50 A45,45 0 0,1 95,50"
+                fill="none" stroke="rgba(247,201,126,0.85)" stroke-width="2.5"
+                stroke-linecap="round" stroke-dasharray="141" stroke-dashoffset="70" />
+              <!-- Moving dot showing sun position -->
+              <circle id="sun-dot" cx="50" cy="5" r="5" fill="#f7c97e" stroke="#fff" stroke-width="2" />
+            </svg>
+          </div>
+
+          <div class="sun-item right">
+            <i class="fas fa-moon set-icon"></i>
+            <div>
+              <p class="sun-label">Sunset</p>
+              <p id="sunset">—</p>
             </div>
-        </section>
-    </main>
+          </div>
+        </div>
 
-    <!-- Script File -->
-    <script src="script.js"></script>
+      </div><!-- /card -->
+
+      <!-- 5-DAY FORECAST -->
+      <p class="section-label">
+        <i class="fas fa-calendar-days"></i> 5-Day Forecast
+      </p>
+      <div class="forecast-grid" id="forecast-grid">
+        <!-- Forecast cards are created by JavaScript -->
+      </div>
+
+    </div><!-- /weather-section -->
+
+    <!-- FOOTER -->
+    <footer>
+      Powered by <a href="https://openweathermap.org" target="_blank">OpenWeatherMap</a>
+      &nbsp;·&nbsp; Built by  C VISHNU VARDHAN ♥
+    </footer>
+
+  </div><!-- /app -->
+
+  <!-- Our JavaScript file -->
+  <script src="script.js"></script>
+
 </body>
 </html>
