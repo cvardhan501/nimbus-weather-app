@@ -1,777 +1,700 @@
 /* ============================================================
-   NIMBUS WEATHER APP — style.css
-   All visual styling goes here.
+   NIMBUS WEATHER APP — script.js
+   All JavaScript logic goes here.
    Sections:
-     1. Reset & Variables
-     2. Background Effects (rain, snow, sun, clouds, fog, thunder)
-     3. App Layout
-     4. Header
-     5. Search Box
-     6. Loading Spinner
-     7. Weather Card
-     8. Stats Grid
-     9. Sunrise / Sunset Arc
-    10. 5-Day Forecast
-    11. Footer
-    12. Utility Classes
-    13. Responsive (Mobile)
+     1. API Key & URLs
+     2. Tab Switching
+     3. Auto Location (Geolocation)
+     4. Manual City Search
+     5. Fetch Weather Data from API
+     6. Display Current Weather
+     7. Display 5-Day Forecast
+     8. Dynamic Background Effects
+     9. Rain Animation (Canvas)
+    10. Snow Animation (Canvas)
+    11. Sun Arc Progress
+    12. Helper Functions
+    13. UI Helpers (show/hide loading, error, etc.)
    ============================================================ */
 
+/* ── 1. API KEY & URLs ── */
 
-/* ── 1. RESET & VARIABLES ── */
+/*
+  HOW TO GET YOUR FREE API KEY:
+  1. Go to https://openweathermap.org
+  2. Click "Sign Up" and create a free account
+  3. Go to your Profile > "My API Keys"
+  4. Copy your key and paste it below
+  NOTE: New keys can take 10–30 minutes to activate
+*/
+const API_KEY = "c5a310138b9039a628ed1cb13fbb02c0"; // <-- Paste your key here
 
-/* Remove default browser spacing on all elements */
-*, *::before, *::after {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+/* Base URL for OpenWeatherMap API */
+const BASE = "https://api.openweathermap.org/data/2.5";
+
+/* We use metric units (Celsius) — change to "imperial" for Fahrenheit */
+const UNITS = "metric";
+
+/* ── 2. TAB SWITCHING ── */
+
+/* Called when user clicks "Auto Detect" or "Search City" tab */
+function showTab(tabName) {
+  /* Toggle active class on buttons */
+  document
+    .getElementById("tab-auto")
+    .classList.toggle("active", tabName === "auto");
+  document
+    .getElementById("tab-manual")
+    .classList.toggle("active", tabName === "manual");
+
+  /* Show or hide the panels */
+  document
+    .getElementById("panel-auto")
+    .classList.toggle("hidden", tabName !== "auto");
+  document
+    .getElementById("panel-manual")
+    .classList.toggle("hidden", tabName !== "manual");
+
+  /* Clear any previous error when switching tabs */
+  hideError();
 }
 
-/* CSS Variables — change colors here to restyle the whole app */
-:root {
-  --accent:       #7eb8f7;       /* blue accent color */
-  --accent-glow:  rgba(126, 184, 247, 0.25);
-  --text:         #ffffff;
-  --text-dim:     rgba(255, 255, 255, 0.55);
-  --text-muted:   rgba(255, 255, 255, 0.35);
-  --card-bg:      rgba(255, 255, 255, 0.12);
-  --card-border:  rgba(255, 255, 255, 0.22);
-  --sunrise-col:  #f7c97e;       /* warm yellow for sunrise */
-  --sunset-col:   #f7a07e;       /* warm orange for sunset */
-}
+/* ── 3. AUTO LOCATION (Geolocation API) ── */
 
-body {
-  font-family: 'Poppins', sans-serif;
-  min-height: 100vh;
-  /* Default background — changes per weather condition via JS */
-  background: linear-gradient(135deg, #1a2a4a 0%, #0d1b35 50%, #0a1628 100%);
-  color: var(--text);
-  overflow-x: hidden;
-  transition: background 1.2s ease; /* smooth bg color transition */
-}
+function detectLocation() {
+  /* Check if the browser supports geolocation */
+  if (!navigator.geolocation) {
+    showError("Your browser does not support location detection.");
+    return;
+  }
 
+  /* Disable button and show loading text while we wait */
+  const btn = document.getElementById("detect-btn");
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Detecting...';
 
-/* ── 2. BACKGROUND EFFECTS ── */
+  /* Ask the browser for the user's coordinates */
+  navigator.geolocation.getCurrentPosition(
+    /* SUCCESS: coordinates received */
+    function (position) {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      fetchByCoords(lat, lon); /* fetch weather using lat/lon */
 
-/* Canvas is used to draw rain and snow particles */
-#fx-canvas {
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  pointer-events: none; /* clicks go through the canvas */
-  z-index: 1;
-  display: none; /* shown by JS when needed */
-}
+      /* Reset button */
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-location-dot"></i> Detect My Location';
+    },
 
-/* Glowing sun in top-right corner */
-#sun-el {
-  position: fixed;
-  top: -60px; right: -60px;
-  width: 280px; height: 280px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #fff9c4 0%, #ffe000 35%, #ff9500 65%, transparent 100%);
-  box-shadow:
-    0 0 80px 40px rgba(255, 185, 0, 0.6),
-    0 0 180px 90px rgba(255, 130, 0, 0.3);
-  animation: sunPulse 3s ease-in-out infinite;
-  z-index: 1;
-  display: none; /* shown by JS for sunny weather */
-}
+    /* ERROR: user denied or something went wrong */
+    function (error) {
+      let message = "Could not get your location.";
+      if (error.code === 1)
+        message = "Location access denied. Please allow location permission.";
+      if (error.code === 2)
+        message = "Location unavailable. Try searching manually.";
+      if (error.code === 3) message = "Location request timed out. Try again.";
 
-/* Sun slowly pulses (grows and shrinks) */
-@keyframes sunPulse {
-  0%, 100% { transform: scale(1); }
-  50%       { transform: scale(1.08); }
-}
+      showError(message);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-location-dot"></i> Detect My Location';
+    },
 
-/* Lightning container — sits above everything */
-#lightning-el {
-  position: fixed;
-  inset: 0; /* covers full screen */
-  z-index: 6;
-  pointer-events: none;
-  display: none; /* shown by JS for thunderstorm */
-}
-
-/* Each bolt wrapper is positioned at different x positions */
-.bolt-wrap {
-  position: absolute;
-  top: 0;
-  opacity: 0; /* hidden until animation fires */
-}
-.bw1 { left: 22%; width: 70px; height: 65%; animation: boltFlash 4s infinite; }
-.bw2 { left: 58%; width: 55px; height: 80%; animation: boltFlash 5s 1.8s infinite; }
-.bw3 { left: 82%; width: 60px; height: 55%; animation: boltFlash 6s 3.5s infinite; }
-
-.bolt-svg { width: 100%; height: 100%; }
-
-/* The bolt flashes on and off rapidly (like real lightning) */
-@keyframes boltFlash {
-  0%,  74%, 100% { opacity: 0; }
-  75%            { opacity: 1; }
-  76%            { opacity: 0.3; }
-  77%            { opacity: 1; }
-  79%            { opacity: 0.5; }
-  81%            { opacity: 0; }
-}
-
-/* Full-screen white flash at the moment the bolt appears */
-.flash-screen {
-  position: absolute;
-  inset: 0;
-  background: rgba(210, 230, 255, 0);
-  animation: screenFlash 4s infinite;
-}
-
-@keyframes screenFlash {
-  0%,  74%, 100% { background: rgba(210, 230, 255, 0); }
-  75%            { background: rgba(210, 230, 255, 0.22); }
-  76%            { background: rgba(210, 230, 255, 0.05); }
-  77%            { background: rgba(210, 230, 255, 0.18); }
-  80%            { background: rgba(210, 230, 255, 0); }
-}
-
-/* Moving cloud blobs in the background */
-#clouds-el {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  overflow: hidden;
-  display: none; /* shown by JS for cloudy weather */
-}
-
-.bgc {
-  position: absolute;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 80px;
-  filter: blur(16px); /* soft blurry cloud look */
-}
-
-/* Each cloud is different size, position, and speed */
-.bgc1 { width: 500px; height: 78px; top: 8%;  left: -300px; animation: cloudMove 28s linear infinite; }
-.bgc2 { width: 370px; height: 58px; top: 22%; left: -200px; animation: cloudMove 38s 6s linear infinite; }
-.bgc3 { width: 590px; height: 88px; top: 38%; left: -350px; animation: cloudMove 24s 14s linear infinite; }
-.bgc4 { width: 410px; height: 64px; top: 56%; left: -220px; animation: cloudMove 33s 20s linear infinite; }
-
-/* Cloud slides from left to right across the screen */
-@keyframes cloudMove {
-  from { transform: translateX(0); }
-  to   { transform: translateX(calc(100vw + 700px)); }
-}
-
-/* Fog / mist horizontal strips */
-#fog-el {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  overflow: hidden;
-  display: none; /* shown by JS for foggy weather */
-}
-
-.fogl {
-  position: absolute;
-  left: -50%;
-  width: 200%;
-  height: 130px;
-  /* Gradient that fades in/out on left and right */
-  background: linear-gradient(
-    to right,
-    transparent,
-    rgba(200, 215, 230, 0.12) 30%,
-    rgba(200, 215, 230, 0.18) 50%,
-    rgba(200, 215, 230, 0.12) 70%,
-    transparent
+    /* Options: give up after 10 seconds */
+    { timeout: 10000 },
   );
-  filter: blur(20px);
 }
 
-/* Each fog strip drifts at different speeds and directions */
-.fl1 { top: 10%; animation: fogDrift 18s ease-in-out infinite alternate; }
-.fl2 { top: 40%; animation: fogDrift 25s 5s ease-in-out infinite alternate-reverse; }
-.fl3 { top: 68%; animation: fogDrift 21s 10s ease-in-out infinite alternate; }
-
-@keyframes fogDrift {
-  from { transform: translateX(-20%); }
-  to   { transform: translateX(20%); }
-}
-
-
-/* ── 3. APP LAYOUT ── */
-
-/* Centers everything and limits max width */
-.app {
-  position: relative;
-  z-index: 10; /* sits above all background effects */
-  max-width: 500px;
-  margin: 0 auto;
-  padding: 20px 16px 60px;
-}
-
-
-/* ── 4. HEADER ── */
-
-.header {
-  text-align: center;
-  padding: 10px 0 20px;
-}
-
-.logo {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--text);
-}
-
-/* Cloud-sun icon next to the brand name */
-.logo i {
-  font-size: 2rem;
-  color: var(--accent);
-  filter: drop-shadow(0 0 12px var(--accent-glow));
-}
-
-.tagline {
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
-
-/* ── 5. SEARCH BOX ── */
-
-.search-box {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-radius: 20px;
-  padding: 20px;
-  margin-bottom: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-
-/* Tab buttons row */
-.toggle-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.tab {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
-  font-family: 'Poppins', sans-serif;
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.25s;
-}
-
-.tab:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-}
-
-/* Active/selected tab */
-.tab.active {
-  background: rgba(126, 184, 247, 0.25);
-  border-color: rgba(126, 184, 247, 0.6);
-  color: var(--accent);
-  box-shadow: 0 0 16px var(--accent-glow);
-}
-
-/* Hint text shown inside the panel */
-.hint {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  text-align: center;
-  margin-bottom: 12px;
-}
-
-/* "Detect My Location" button */
-.detect-btn {
-  display: block;
-  width: 100%;
-  padding: 12px;
-  border: none;
-  border-radius: 50px;
-  background: linear-gradient(135deg, var(--accent), #4a9fe0);
-  color: #fff;
-  font-family: 'Poppins', sans-serif;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 4px 20px rgba(74, 159, 224, 0.45);
-}
-
-.detect-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(74, 159, 224, 0.6);
-}
-
-.detect-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* City search input row */
-.search-input-row {
-  display: flex;
-  gap: 8px;
-}
-
-.search-input-row input {
-  flex: 1;
-  padding: 11px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 50px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  font-family: 'Poppins', sans-serif;
-  font-size: 0.88rem;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.search-input-row input::placeholder {
-  color: var(--text-muted);
-}
-
-.search-input-row input:focus {
-  border-color: rgba(126, 184, 247, 0.5);
-}
-
-.search-input-row button {
-  width: 44px; height: 44px;
-  border-radius: 50%;
-  border: none;
-  background: linear-gradient(135deg, var(--accent), #4a9fe0);
-  color: #fff;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: transform 0.2s;
-  box-shadow: 0 4px 16px rgba(74, 159, 224, 0.4);
-}
-
-.search-input-row button:hover {
-  transform: scale(1.08);
-}
-
-/* Error message styling */
-.error-msg {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgba(255, 80, 80, 0.15);
-  border: 1px solid rgba(255, 80, 80, 0.3);
-  color: #ff9090;
-  font-size: 0.82rem;
-  animation: shake 0.4s ease;
-}
-
-/* Shake animation on error */
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25%       { transform: translateX(-6px); }
-  75%       { transform: translateX(6px); }
-}
-
-
-/* ── 6. LOADING SPINNER ── */
-
-.loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 48px 0;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
-/* Spinning circle */
-.spinner {
-  width: 48px; height: 48px;
-  border-radius: 50%;
-  border: 3px solid rgba(126, 184, 247, 0.15);
-  border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-
-/* ── 7. WEATHER CARD ── */
-
-/* Fade-in animation when card appears */
-.weather-section {
-  animation: fadeUp 0.5s ease both;
-}
-
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.card {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
-  border-radius: 22px;
-  padding: 22px 20px;
-  margin-bottom: 14px;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5),
-              inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-
-/* Top row: city + date */
-.card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 18px;
-}
-
-.card-top h1 {
-  font-size: 1.85rem;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.card-top .country {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin-top: 4px;
-}
-
-.date-box {
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.date-box p:first-child {
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.date-box p:last-child {
-  font-size: 0.68rem;
-  color: var(--text-dim);
-  margin-top: 2px;
-}
-
-/* Temperature + weather icon row */
-.temp-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 18px;
-}
-
-/* Big temperature number */
-.temperature {
-  font-size: 5.5rem;
-  font-weight: 300;
-  line-height: 1;
-  display: flex;
-  align-items: flex-start;
-}
-
-.unit {
-  font-size: 2rem;
-  font-weight: 400;
-  color: var(--text-dim);
-  margin-top: 10px;
-}
-
-/* Right side: icon + condition + feels like */
-.condition-box {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-}
-
-#weather-icon {
-  font-size: 3.4rem;
-  /* Icon color set dynamically by JS */
-  animation: iconBob 3.5s ease-in-out infinite;
-}
-
-/* Icon gently floats up and down */
-@keyframes iconBob {
-  0%, 100% { transform: translateY(0); }
-  50%       { transform: translateY(-7px); }
-}
-
-.condition-box p:first-of-type {
-  font-size: 0.84rem;
-  font-weight: 600;
-}
-
-.feels {
-  font-size: 0.7rem;
-  color: var(--text-dim);
-}
-
-/* Horizontal line divider */
-.divider {
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
-  margin: 4px 0 16px;
-}
-
-
-/* ── 8. STATS GRID ── */
-
-/* 2x2 grid for humidity, wind, pressure, visibility */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.stat {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 13px;
-  padding: 11px 13px;
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-
-/* Coloured icon box on the left of each stat */
-.stat-icon {
-  width: 34px; height: 34px;
-  background: rgba(126, 184, 247, 0.18);
-  border-radius: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent);
-  font-size: 0.85rem;
-  flex-shrink: 0;
-}
-
-.stat-label {
-  font-size: 0.62rem;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 2px;
-}
-
-.stat-value {
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-
-/* ── 9. SUNRISE / SUNSET ARC ── */
-
-.sun-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.sun-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Sunset item is reversed (icon on right) */
-.sun-item.right {
-  flex-direction: row-reverse;
-}
-
-.sun-item.right div {
-  text-align: right;
-}
-
-/* Sunrise icon color */
-.rise-icon {
-  font-size: 1.7rem;
-  color: var(--sunrise-col);
-  filter: drop-shadow(0 0 8px rgba(247, 201, 126, 0.6));
-}
-
-/* Sunset icon color */
-.set-icon {
-  font-size: 1.7rem;
-  color: var(--sunset-col);
-  filter: drop-shadow(0 0 8px rgba(247, 160, 126, 0.6));
-}
-
-.sun-label {
-  font-size: 0.62rem;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.sun-item p:last-child {
-  font-size: 0.88rem;
-  font-weight: 700;
-}
-
-/* Centers the SVG arc between sunrise and sunset */
-.arc-wrap {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-}
-
-
-/* ── 10. 5-DAY FORECAST ── */
-
-.section-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.section-label i {
-  color: var(--accent);
-}
-
-/* 5 equal columns, one per day */
-.forecast-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 7px;
-}
-
-.forecast-card {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.17);
-  border-radius: 14px;
-  padding: 13px 5px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  transition: transform 0.2s, background 0.2s;
-  cursor: default;
-}
-
-.forecast-card:hover {
-  transform: translateY(-3px);
-  background: rgba(255, 255, 255, 0.16);
-}
-
-/* Day name label (e.g. "MON") */
-.fc-day {
-  font-size: 0.63rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-}
-
-/* "Today" label in accent color */
-.fc-day.today {
-  color: var(--accent);
-}
-
-/* Weather icon in forecast card */
-.fc-icon {
-  font-size: 1.5rem;
-  margin: 3px 0;
-}
-
-/* High temp */
-.fc-high {
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-/* Low temp */
-.fc-low {
-  font-size: 0.7rem;
-  color: var(--text-dim);
-}
-
-
-/* ── 11. FOOTER ── */
-
-footer {
-  text-align: center;
-  margin-top: 20px;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
-footer a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-footer a:hover {
-  text-decoration: underline;
-}
-
-
-/* ── 12. UTILITY CLASSES ── */
-
-/* Hide any element */
-.hidden {
-  display: none !important;
-}
-
-/* Weather icon color classes — applied by JavaScript */
-.ic-sun   { color: #ffd060; filter: drop-shadow(0 0 10px rgba(255, 200, 50, 0.8)); }
-.ic-rain  { color: #7eb8f7; filter: drop-shadow(0 0 10px rgba(126, 184, 247, 0.7)); }
-.ic-snow  { color: #d0e8ff; filter: drop-shadow(0 0 10px rgba(200, 224, 255, 0.7)); }
-.ic-cloud { color: #c0d0e8; filter: drop-shadow(0 0 8px rgba(192, 208, 232, 0.5)); }
-.ic-storm { color: #b0c0ff; filter: drop-shadow(0 0 12px rgba(176, 192, 255, 0.85)); }
-.ic-fog   { color: #b0bec8; filter: drop-shadow(0 0 8px rgba(176, 190, 200, 0.5)); }
-
-
-/* ── 13. RESPONSIVE — MOBILE ── */
-
-@media (max-width: 420px) {
-  /* Smaller temperature on tiny screens */
-  .temperature { font-size: 4.4rem; }
-
-  /* Smaller city name */
-  .card-top h1 { font-size: 1.55rem; }
-
-  /* Tighter forecast grid */
-  .forecast-grid { gap: 4px; }
-  .forecast-card { padding: 10px 3px; }
-  .fc-icon       { font-size: 1.3rem; }
+/* ── 4. MANUAL CITY SEARCH ── */
+
+function searchCity() {
+  /* Get the text the user typed */
+  const cityName = document.getElementById("city-input").value.trim();
+
+  /* Don't search if input is empty */
+  if (!cityName) {
+    showError("Please enter a city name.");
+    return;
+  }
+
+  fetchByCity(cityName);
+}
+
+/* ── 5. FETCH WEATHER DATA FROM API ── */
+
+/* Fetch using latitude and longitude (from geolocation) */
+async function fetchByCoords(lat, lon) {
+  showLoading();
+  try {
+    /* Fetch both current weather and forecast at the same time */
+    const [wRes, fRes] = await Promise.all([
+      fetch(
+        `${BASE}/weather?lat=${lat}&lon=${lon}&units=${UNITS}&appid=${API_KEY}`,
+      ),
+      fetch(
+        `${BASE}/forecast?lat=${lat}&lon=${lon}&units=${UNITS}&appid=${API_KEY}`,
+      ),
+    ]);
+    handleResponse(wRes, fRes);
+  } catch (err) {
+    hideLoading();
+    showError("Network error. Please check your internet connection.");
+  }
+}
+
+/* Fetch using a city name (from search box) */
+async function fetchByCity(city) {
+  showLoading();
+  try {
+    const [wRes, fRes] = await Promise.all([
+      fetch(`${BASE}/weather?q=${city}&units=${UNITS}&appid=${API_KEY}`),
+      fetch(`${BASE}/forecast?q=${city}&units=${UNITS}&appid=${API_KEY}`),
+    ]);
+    handleResponse(wRes, fRes);
+  } catch (err) {
+    hideLoading();
+    showError("Network error. Please check your internet connection.");
+  }
+}
+
+/* Process the API response */
+async function handleResponse(weatherRes, forecastRes) {
+  /* Check for errors (e.g. city not found, bad API key) */
+  if (!weatherRes.ok) {
+    hideLoading();
+    if (weatherRes.status === 404)
+      showError("City not found. Please check the spelling.");
+    else if (weatherRes.status === 401)
+      showError("Invalid API key. Please check script.js.");
+    else showError("Error " + weatherRes.status + ": Could not fetch weather.");
+    return;
+  }
+
+  /* Convert responses to JSON objects */
+  const weatherData = await weatherRes.json();
+  const forecastData = forecastRes.ok ? await forecastRes.json() : null;
+
+  /* Hide loading and show the weather */
+  hideLoading();
+  hideError();
+  displayWeather(weatherData);
+  if (forecastData) displayForecast(forecastData);
+
+  /* Show the weather section */
+  document.getElementById("weather-section").classList.remove("hidden");
+}
+
+/* ── 6. DISPLAY CURRENT WEATHER ── */
+
+function displayWeather(data) {
+  /* Destructure the data we need from the API response */
+  const cityName = data.name;
+  const countryCode = data.sys.country;
+  const temp = Math.round(data.main.temp);
+  const feelsLike = Math.round(data.main.feels_like);
+  const humidity = data.main.humidity;
+  const pressure = data.main.pressure;
+  const windSpeed = data.wind.speed;
+  const visibility = data.visibility;
+  const condition = data.weather[0].description;
+  const conditionId =
+    data.weather[0].id; /* numeric ID used to pick icon/effect */
+  const sunriseTs = data.sys.sunrise; /* Unix timestamp */
+  const sunsetTs = data.sys.sunset; /* Unix timestamp */
+  const timezone = data.timezone; /* offset in seconds from UTC */
+
+  /* ── Fill in the HTML elements ── */
+
+  document.getElementById("city-name").textContent = cityName;
+  document.getElementById("country-name").textContent =
+    getCountryName(countryCode);
+  document.getElementById("temp-val").textContent = temp;
+  document.getElementById("condition-text").textContent = capitalise(condition);
+  document.getElementById("feels-like").textContent =
+    "Feels like " + feelsLike + "°";
+  document.getElementById("humidity").textContent = humidity + "%";
+  document.getElementById("wind").textContent =
+    (windSpeed * 3.6).toFixed(1) + " km/h";
+  document.getElementById("pressure").textContent = pressure + " hPa";
+  document.getElementById("visibility").textContent = visibility
+    ? (visibility / 1000).toFixed(1) + " km"
+    : "N/A";
+  document.getElementById("sunrise").textContent = formatTime(
+    sunriseTs,
+    timezone,
+  );
+  document.getElementById("sunset").textContent = formatTime(
+    sunsetTs,
+    timezone,
+  );
+
+  /* ── Set today's date ── */
+  const localDate = getLocalDate(timezone);
+  document.getElementById("week-day").textContent = localDate.dayName;
+  document.getElementById("full-date").textContent = localDate.fullDate;
+
+  /* ── Set weather icon ── */
+  const isNight = checkIfNight(sunriseTs, sunsetTs, timezone);
+  setWeatherIcon(conditionId, isNight);
+
+  /* ── Animate the sunrise/sunset arc ── */
+  setSunArc(sunriseTs, sunsetTs, timezone);
+
+  /* ── Change background to match weather ── */
+  setBackground(conditionId);
+}
+
+/* ── 7. DISPLAY 5-DAY FORECAST ── */
+
+function displayForecast(data) {
+  const grid = document.getElementById("forecast-grid");
+  grid.innerHTML = ""; /* clear old cards */
+
+  /* The API returns 40 entries (every 3 hours for 5 days)
+     We want one reading per day — pick the one closest to noon */
+  const dailyData = {};
+
+  data.list.forEach(function (entry) {
+    /* Get the date string e.g. "2025-06-15" */
+    const dateKey = entry.dt_txt.split(" ")[0];
+
+    /* Keep the noon (12:00) entry if available, otherwise first of the day */
+    if (!dailyData[dateKey] || entry.dt_txt.includes("12:00")) {
+      dailyData[dateKey] = entry;
+    }
+  });
+
+  /* Get the 5 days and short day names */
+  const days = Object.keys(dailyData).slice(0, 5);
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const todayIdx = new Date().getDay();
+
+  days.forEach(function (dateKey, index) {
+    const entry = dailyData[dateKey];
+
+    /* Calculate correct day name from today's index */
+    const dayLabel = index === 0 ? "Today" : dayNames[(todayIdx + index) % 7];
+
+    /* Find the highest and lowest temps for this day */
+    const sameDayEntries = data.list.filter((e) =>
+      e.dt_txt.startsWith(dateKey),
+    );
+    const high = Math.round(
+      Math.max(...sameDayEntries.map((e) => e.main.temp_max)),
+    );
+    const low = Math.round(
+      Math.min(...sameDayEntries.map((e) => e.main.temp_min)),
+    );
+
+    /* Build the forecast card HTML */
+    const iconInfo = getForecastIcon(entry.weather[0].id);
+
+    const card = document.createElement("div");
+    card.className = "forecast-card";
+    card.innerHTML =
+      '<p class="fc-day ' +
+      (index === 0 ? "today" : "") +
+      '">' +
+      dayLabel +
+      "</p>" +
+      '<i class="' +
+      iconInfo.icon +
+      " fc-icon " +
+      iconInfo.colorClass +
+      '"></i>' +
+      '<p class="fc-high">' +
+      high +
+      "°</p>" +
+      '<p class="fc-low">' +
+      low +
+      "°</p>";
+
+    grid.appendChild(card);
+  });
+}
+
+/* ── 8. DYNAMIC BACKGROUND EFFECTS ── */
+
+/*
+  Weather condition IDs from OpenWeatherMap:
+  200–299 = Thunderstorm
+  300–399 = Drizzle
+  500–599 = Rain
+  600–699 = Snow
+  700–799 = Atmosphere (fog, mist, haze, smoke)
+  800     = Clear sky
+  801–804 = Clouds
+*/
+function getEffectType(conditionId) {
+  if (conditionId >= 200 && conditionId < 300) return "thunder";
+  if (conditionId >= 300 && conditionId < 600) return "rain";
+  if (conditionId >= 600 && conditionId < 700) return "snow";
+  if (conditionId >= 700 && conditionId < 800) return "fog";
+  if (conditionId === 800) return "sunny";
+  if (conditionId > 800) return "clouds";
+  return "sunny"; /* default */
+}
+
+/* Background gradient colors for each weather type */
+const BG_COLORS = {
+  thunder: "linear-gradient(135deg, #08041a, #03040a, #06041a)",
+  rain: "linear-gradient(135deg, #0a1828, #06101a, #040c14)",
+  snow: "linear-gradient(135deg, #0e1a2e, #080d18, #050a12)",
+  fog: "linear-gradient(135deg, #141820, #0a0d18, #080b14)",
+  sunny: "linear-gradient(135deg, #2a1a00, #1a1000, #120c00)",
+  clouds: "linear-gradient(135deg, #1a2a4a, #0d1b35, #0a1628)",
+};
+
+/* Variable to store the animation frame ID (so we can cancel it) */
+let animationId = null;
+
+function setBackground(conditionId) {
+  const type = getEffectType(conditionId);
+
+  /* Step 1: Cancel any running canvas animation */
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+
+  /* Step 2: Clear the canvas */
+  const canvas = document.getElementById("fx-canvas");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  /* Step 3: Hide all effects */
+  canvas.style.display = "none";
+  document.getElementById("sun-el").style.display = "none";
+  document.getElementById("lightning-el").style.display = "none";
+  document.getElementById("clouds-el").style.display = "none";
+  document.getElementById("fog-el").style.display = "none";
+
+  /* Step 4: Set the body background color */
+  document.body.style.background = BG_COLORS[type] || BG_COLORS.clouds;
+
+  /* Step 5: Show the matching effect */
+  if (type === "sunny") {
+    document.getElementById("sun-el").style.display = "block";
+  } else if (type === "clouds") {
+    document.getElementById("clouds-el").style.display = "block";
+  } else if (type === "fog") {
+    document.getElementById("fog-el").style.display = "block";
+  } else if (type === "rain") {
+    canvas.style.display = "block";
+    startRain(false); /* false = light rain */
+  } else if (type === "thunder") {
+    canvas.style.display = "block";
+    document.getElementById("lightning-el").style.display = "block";
+    startRain(true); /* true = heavy rain for thunderstorm */
+  } else if (type === "snow") {
+    canvas.style.display = "block";
+    startSnow();
+  }
+}
+
+/* ── 9. RAIN ANIMATION (Canvas) ── */
+
+function startRain(isHeavy) {
+  const canvas = document.getElementById("fx-canvas");
+  const ctx = canvas.getContext("2d");
+
+  /* Match canvas size to window */
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  window.onresize = function () {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  };
+
+  /* Create rain drops — more drops for heavy/thunderstorm rain */
+  const dropCount = isHeavy ? 260 : 140;
+  const drops = [];
+
+  for (let i = 0; i < dropCount; i++) {
+    drops.push({
+      x: Math.random() * canvas.width /* random horizontal position */,
+      y: Math.random() * canvas.height /* random vertical position */,
+      length: 10 + Math.random() * 20 /* drop length */,
+      speed: (isHeavy ? 10 : 5) + Math.random() * 5 /* fall speed */,
+      opacity: 0.08 + Math.random() * 0.22 /* semi-transparent */,
+    });
+  }
+
+  /* Draw function — called every frame */
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drops.forEach(function (drop) {
+      ctx.beginPath();
+      ctx.moveTo(drop.x, drop.y);
+      /* Slight diagonal angle for the rain */
+      ctx.lineTo(drop.x - drop.length * 0.2, drop.y + drop.length);
+      ctx.strokeStyle = "rgba(180, 215, 255, " + drop.opacity + ")";
+      ctx.lineWidth = 0.9;
+      ctx.lineCap = "round";
+      ctx.stroke();
+
+      /* Move drop downward */
+      drop.y += drop.speed;
+      drop.x -= drop.speed * 0.2; /* slight horizontal drift */
+
+      /* Reset drop to top when it goes off screen */
+      if (drop.y > canvas.height) {
+        drop.y = -drop.length;
+        drop.x = Math.random() * canvas.width;
+      }
+    });
+
+    animationId = requestAnimationFrame(draw);
+  }
+
+  draw();
+}
+
+/* ── 10. SNOW ANIMATION (Canvas) ── */
+
+function startSnow() {
+  const canvas = document.getElementById("fx-canvas");
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  window.onresize = function () {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  };
+
+  /* Create snowflakes */
+  const flakes = [];
+  for (let i = 0; i < 120; i++) {
+    flakes.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      radius: 1 + Math.random() * 2.5 /* size of snowflake */,
+      speed: 0.5 + Math.random() * 1.2 /* fall speed */,
+      drift: Math.random() * 0.5 - 0.25 /* left/right wobble */,
+      wobble: Math.random() * Math.PI * 2 /* starting wobble angle */,
+      opacity: 0.2 + Math.random() * 0.5,
+    });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    flakes.forEach(function (flake) {
+      ctx.beginPath();
+      ctx.arc(flake.x, flake.y, flake.radius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(220, 235, 255, " + flake.opacity + ")";
+      ctx.fill();
+
+      /* Move flake downward with a gentle side wobble */
+      flake.y += flake.speed;
+      flake.wobble += 0.018;
+      flake.x += flake.drift + Math.sin(flake.wobble) * 0.35;
+
+      /* Reset when off screen */
+      if (flake.y > canvas.height) {
+        flake.y = -flake.radius;
+        flake.x = Math.random() * canvas.width;
+      }
+      /* Wrap horizontally */
+      if (flake.x > canvas.width) flake.x = 0;
+      if (flake.x < 0) flake.x = canvas.width;
+    });
+
+    animationId = requestAnimationFrame(draw);
+  }
+
+  draw();
+}
+
+/* ── 11. SUN ARC PROGRESS ── */
+
+/* Shows a curved arc indicating where the sun currently is (sunrise to sunset) */
+function setSunArc(sunriseTs, sunsetTs, timezoneOffset) {
+  /* Current time in the city's timezone */
+  const nowLocal = Date.now() / 1000 + timezoneOffset;
+  const riseLocal = sunriseTs + timezoneOffset;
+  const setLocal = sunsetTs + timezoneOffset;
+
+  /* Calculate progress (0 = just after sunrise, 1 = just before sunset) */
+  let progress = (nowLocal - riseLocal) / (setLocal - riseLocal);
+  progress = Math.max(0, Math.min(1, progress)); /* clamp between 0 and 1 */
+
+  /* Update the arc stroke-dashoffset (141 = full arc length) */
+  const arcPath = document.getElementById("sun-arc");
+  arcPath.setAttribute("stroke-dashoffset", (141 - progress * 141).toFixed(1));
+
+  /* Move the dot along the arc path */
+  /* Arc goes from left (angle = PI) to right (angle = 2*PI) over the top */
+  const angle = Math.PI + progress * Math.PI;
+  const cx = 50,
+    cy = 50,
+    r = 45; /* arc center and radius in SVG units */
+  const dotX = cx + r * Math.cos(angle);
+  const dotY = cy + r * Math.sin(angle);
+
+  document.getElementById("sun-dot").setAttribute("cx", dotX.toFixed(1));
+  document.getElementById("sun-dot").setAttribute("cy", dotY.toFixed(1));
+}
+
+/* ── 12. HELPER FUNCTIONS ── */
+
+/* Convert Unix timestamp to "6:30 AM" format using city's timezone */
+function formatTime(unixTs, timezoneOffsetSeconds) {
+  /* Add the timezone offset to get local time */
+  const date = new Date((unixTs + timezoneOffsetSeconds) * 1000);
+  let hours = date.getUTCHours();
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12 || 12; /* convert 0 to 12 for 12 AM */
+  return hours + ":" + minutes + " " + ampm;
+}
+
+/* Get the day name and date string for the city's local time */
+function getLocalDate(timezoneOffsetSeconds) {
+  const date = new Date((Date.now() / 1000 + timezoneOffsetSeconds) * 1000);
+  const DAY_NAMES = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+  const MONTH_NAMES = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  return {
+    dayName: DAY_NAMES[date.getUTCDay()],
+    fullDate:
+      MONTH_NAMES[date.getUTCMonth()] +
+      " " +
+      date.getUTCDate() +
+      ", " +
+      date.getUTCFullYear(),
+  };
+}
+
+/* Check if it's currently night time in the city */
+function checkIfNight(sunriseTs, sunsetTs, timezoneOffset) {
+  const nowLocal = Date.now() / 1000 + timezoneOffset;
+  const riseLocal = sunriseTs + timezoneOffset;
+  const setLocal = sunsetTs + timezoneOffset;
+  return nowLocal < riseLocal || nowLocal > setLocal;
+}
+
+/* Convert country code (e.g. "GB") to full name (e.g. "United Kingdom") */
+function getCountryName(code) {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+/* Capitalise every word (e.g. "light rain" → "Light Rain") */
+function capitalise(str) {
+  return str.replace(/\b\w/g, function (l) {
+    return l.toUpperCase();
+  });
+}
+
+/* Set the weather icon and its color class based on condition ID */
+function setWeatherIcon(conditionId, isNight) {
+  const iconEl = document.getElementById("weather-icon");
+
+  /* Remove all previous color classes */
+  iconEl.classList.remove(
+    "ic-sun",
+    "ic-rain",
+    "ic-snow",
+    "ic-cloud",
+    "ic-storm",
+    "ic-fog",
+  );
+
+  let iconClass = "fas fa-cloud"; /* default */
+  let colorClass = "ic-cloud";
+
+  if (conditionId >= 200 && conditionId < 300) {
+    iconClass = "fas fa-bolt";
+    colorClass = "ic-storm";
+  } else if (conditionId >= 300 && conditionId < 400) {
+    iconClass = "fas fa-cloud-drizzle";
+    colorClass = "ic-rain";
+  } else if (conditionId >= 500 && conditionId < 600) {
+    iconClass = "fas fa-cloud-showers-heavy";
+    colorClass = "ic-rain";
+  } else if (conditionId >= 600 && conditionId < 700) {
+    iconClass = "fas fa-snowflake";
+    colorClass = "ic-snow";
+  } else if (conditionId >= 700 && conditionId < 800) {
+    iconClass = "fas fa-smog";
+    colorClass = "ic-fog";
+  } else if (conditionId === 800) {
+    iconClass = isNight ? "fas fa-moon" : "fas fa-sun";
+    colorClass = "ic-sun";
+  } else if (conditionId === 801) {
+    iconClass = "fas fa-cloud-sun";
+    colorClass = "ic-cloud";
+  } else {
+    iconClass = "fas fa-cloud";
+    colorClass = "ic-cloud";
+  }
+
+  iconEl.className = iconClass + " " + colorClass;
+}
+
+/* Get icon class and color for forecast cards */
+function getForecastIcon(conditionId) {
+  if (conditionId >= 200 && conditionId < 300)
+    return { icon: "fas fa-bolt", colorClass: "ic-storm" };
+  if (conditionId >= 300 && conditionId < 600)
+    return { icon: "fas fa-cloud-showers-heavy", colorClass: "ic-rain" };
+  if (conditionId >= 600 && conditionId < 700)
+    return { icon: "fas fa-snowflake", colorClass: "ic-snow" };
+  if (conditionId >= 700 && conditionId < 800)
+    return { icon: "fas fa-smog", colorClass: "ic-fog" };
+  if (conditionId === 800) return { icon: "fas fa-sun", colorClass: "ic-sun" };
+  if (conditionId === 801)
+    return { icon: "fas fa-cloud-sun", colorClass: "ic-cloud" };
+  return { icon: "fas fa-cloud", colorClass: "ic-cloud" };
+}
+
+/* ── 13. UI HELPERS ── */
+
+/* Show the loading spinner, hide weather */
+function showLoading() {
+  document.getElementById("loading").classList.remove("hidden");
+  document.getElementById("weather-section").classList.add("hidden");
+  hideError();
+}
+
+/* Hide the loading spinner */
+function hideLoading() {
+  document.getElementById("loading").classList.add("hidden");
+}
+
+/* Show an error message */
+function showError(message) {
+  document.getElementById("error-text").textContent = message;
+  document.getElementById("error-msg").classList.remove("hidden");
+}
+
+/* Hide the error message */
+function hideError() {
+  document.getElementById("error-msg").classList.add("hidden");
 }
