@@ -7,7 +7,7 @@
 
 ## ✨ Live Preview
 
-![Nimbus Weather App](https://nimbus-weather-app-seven.vercel.app/)
+https://nimbus-weather-app-seven.vercel.app
 
 ---
 
